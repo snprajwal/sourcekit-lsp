@@ -52,6 +52,7 @@ extension SourceKitLSPOptions {
       reportSyntacticHighlightInSemanticTokens: true,
       experimentalFeatures: experimentalFeatures,
       swiftPublishDiagnosticsDebounceDuration: 0,
+      doccPublishDiagnosticsDebounceDuration: 0,
       workDoneProgressDebounceDuration: 0
     )
   }

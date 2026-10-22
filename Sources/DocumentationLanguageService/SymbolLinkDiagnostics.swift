@@ -106,7 +106,7 @@ extension DocumentationLanguageService {
     inFlightPublishDiagnosticsTasks[uri] = Task(priority: .medium) { [weak self] in
       do {
         // Any edit within the debounce duration cancels this task and schedules a new one.
-        try await Task.sleep(for: sourceKitLSPServer.options.swiftPublishDiagnosticsDebounceDurationOrDefault)
+        try await Task.sleep(for: sourceKitLSPServer.options.doccPublishDiagnosticsDebounceDurationOrDefault)
       } catch {
         return
       }

@@ -70,6 +70,11 @@
       "markdownDescription" : "Default workspace type. Overrides workspace type selection logic.",
       "type" : "string"
     },
+    "doccPublishDiagnosticsDebounceDuration" : {
+      "description" : "The time that `DocumentationLanguageService` should wait after an edit before starting to compute diagnostics for DocC symbol links and sending a `PublishDiagnosticsNotification`.",
+      "markdownDescription" : "The time that `DocumentationLanguageService` should wait after an edit before starting to compute diagnostics for DocC symbol links and sending a `PublishDiagnosticsNotification`.",
+      "type" : "number"
+    },
     "experimentalFeatures" : {
       "description" : "Experimental features that are enabled.",
       "items" : {
