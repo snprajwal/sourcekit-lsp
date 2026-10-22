@@ -434,6 +434,17 @@ public struct SourceKitLSPOptions: Sendable, Codable, Equatable, LSPAnyCodable {
     return .seconds(1)
   }
 
+  /// The time that `DocumentationLanguageService` should wait after an edit before starting to compute diagnostics for
+  /// DocC symbol links and sending a `PublishDiagnosticsNotification`.
+  public var doccPublishDiagnosticsDebounceDuration: Double? = nil
+
+  public var doccPublishDiagnosticsDebounceDurationOrDefault: Duration {
+    if let doccPublishDiagnosticsDebounceDuration {
+      return .seconds(doccPublishDiagnosticsDebounceDuration)
+    }
+    return .seconds(1)
+  }
+
   /// When a task is started that should be displayed to the client as a work done progress, how many milliseconds to
   /// wait before actually starting the work done progress. This prevents flickering of the work done progress in the
   /// client for short-lived index tasks which end within this duration.
@@ -512,6 +523,7 @@ public struct SourceKitLSPOptions: Sendable, Codable, Equatable, LSPAnyCodable {
     reportSyntacticHighlightInSemanticTokens: Bool? = nil,
     experimentalFeatures: Set<ExperimentalFeature>? = nil,
     swiftPublishDiagnosticsDebounceDuration: Double? = nil,
+    doccPublishDiagnosticsDebounceDuration: Double? = nil,
     workDoneProgressDebounceDuration: Double? = nil,
     sourcekitdRequestTimeout: Double? = nil,
     semanticServiceRestartTimeout: Double? = nil,
@@ -534,6 +546,7 @@ public struct SourceKitLSPOptions: Sendable, Codable, Equatable, LSPAnyCodable {
     self.reportSyntacticHighlightInSemanticTokens = reportSyntacticHighlightInSemanticTokens
     self.experimentalFeatures = experimentalFeatures
     self.swiftPublishDiagnosticsDebounceDuration = swiftPublishDiagnosticsDebounceDuration
+    self.doccPublishDiagnosticsDebounceDuration = doccPublishDiagnosticsDebounceDuration
     self.workDoneProgressDebounceDuration = workDoneProgressDebounceDuration
     self.sourcekitdRequestTimeout = sourcekitdRequestTimeout
     self.semanticServiceRestartTimeout = semanticServiceRestartTimeout
@@ -587,6 +600,8 @@ public struct SourceKitLSPOptions: Sendable, Codable, Equatable, LSPAnyCodable {
       experimentalFeatures: override?.experimentalFeatures ?? base.experimentalFeatures,
       swiftPublishDiagnosticsDebounceDuration: override?.swiftPublishDiagnosticsDebounceDuration
         ?? base.swiftPublishDiagnosticsDebounceDuration,
+      doccPublishDiagnosticsDebounceDuration: override?.doccPublishDiagnosticsDebounceDuration
+        ?? base.doccPublishDiagnosticsDebounceDuration,
       workDoneProgressDebounceDuration: override?.workDoneProgressDebounceDuration
         ?? base.workDoneProgressDebounceDuration,
       sourcekitdRequestTimeout: override?.sourcekitdRequestTimeout ?? base.sourcekitdRequestTimeout,
