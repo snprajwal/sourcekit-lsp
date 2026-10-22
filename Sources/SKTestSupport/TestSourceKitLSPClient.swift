@@ -215,7 +215,7 @@ package final class TestSourceKitLSPClient: MessageHandler, Sendable {
         throw ConflictingDiagnosticsError()
       }
       capabilities.textDocument!.diagnostic = .init(dynamicRegistration: true)
-      self.handleSingleRequest { (request: RegisterCapabilityRequest) in
+      self.handleMultipleRequests { (request: RegisterCapabilityRequest) in
         XCTAssertEqual(request.registrations.only?.method, DocumentDiagnosticsRequest.method)
         return VoidResponse()
       }
