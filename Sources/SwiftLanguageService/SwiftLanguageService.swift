@@ -717,12 +717,7 @@ extension SwiftLanguageService {
           throw CancellationError()
         }
 
-        sourceKitLSPServer.sendNotificationToClient(
-          PublishDiagnosticsNotification(
-            uri: document,
-            diagnostics: diagnosticReport.items
-          )
-        )
+        await sourceKitLSPServer.publishDiagnostics(diagnosticReport.items, for: document, from: .swift)
       } catch is CancellationError {
       } catch {
         logger.fault(

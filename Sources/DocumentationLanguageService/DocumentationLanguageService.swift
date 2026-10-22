@@ -30,6 +30,16 @@ package actor DocumentationLanguageService: LanguageService, Sendable {
 
   let documentationManager: DocCDocumentationManager
 
+  /// For each open document, the task that publishes its symbol link diagnostics, if the client doesn't pull them.
+  var inFlightPublishDiagnosticsTasks: [DocumentURI: Task<Void, Never>] = [:]
+
+  /// The symbol link diagnostics that were last published for each open document.
+  var publishedDiagnostics: [DocumentURI: [Diagnostic]] = [:]
+
+  /// Open documents that contained symbol links when they were last diagnosed, and whose diagnostics thus need to be
+  /// refreshed when the index changes.
+  var documentsWithSymbolLinks: Set<DocumentURI> = []
+
   var documentManager: DocumentManager {
     get throws {
       guard let sourceKitLSPServer else {
@@ -74,11 +84,14 @@ package actor DocumentationLanguageService: LanguageService, Sendable {
     _ notification: DidOpenTextDocumentNotification,
     snapshot: DocumentSnapshot
   ) async {
-    // The DocumentationLanguageService does not do anything with document events
+    await schedulePublishSymbolLinkDiagnostics(for: snapshot)
   }
 
   package func closeDocument(_ notification: DidCloseTextDocumentNotification) async {
-    // The DocumentationLanguageService does not do anything with document events
+    let uri = notification.textDocument.uri
+    inFlightPublishDiagnosticsTasks.removeValue(forKey: uri)?.cancel()
+    publishedDiagnostics[uri] = nil
+    documentsWithSymbolLinks.remove(uri)
   }
 
   package func reopenDocument(_ notification: ReopenTextDocumentNotification) async {
@@ -103,7 +116,7 @@ package actor DocumentationLanguageService: LanguageService, Sendable {
     postEditSnapshot: DocumentSnapshot,
     edits: [SwiftSyntax.SourceEdit]
   ) async {
-    // The DocumentationLanguageService does not do anything with document events
+    await schedulePublishSymbolLinkDiagnostics(for: postEditSnapshot)
   }
 
   package func definition(_ req: DefinitionRequest) async throws -> LocationsOrLocationLinksResponse? {
@@ -145,17 +158,7 @@ package actor DocumentationLanguageService: LanguageService, Sendable {
     }
 
     let occurrence = try await sourceKitLSPServer.withOnDiskDocumentManager { onDiskDocumentManager in
-      try await index.primaryDefinitionOrDeclarationOccurrence(
-        ofDocCSymbolLink: symbolLink,
-        matchingSuffix: true,
-        fetchSymbolGraph: { location in
-          guard let uri = location.uri else { return nil }
-          return try await workspace.primaryLanguageService(
-            for: uri,
-            workspace.buildServerManager.defaultLanguageInCanonicalTarget(for: uri)
-          ).symbolGraph(forOnDiskContentsAt: location, in: workspace, manager: onDiskDocumentManager)
-        }
-      )
+      try await resolve(symbolLink, in: workspace, index: index, onDiskDocumentManager: onDiskDocumentManager)
     }
 
     guard let targetLocation = occurrence?.location.lspLocation else {
