@@ -55,6 +55,9 @@ actor IndexProgressManager {
   /// While there are ongoing index tasks, a `WorkDoneProgressManager` that displays the work done progress.
   private var workDoneProgress: WorkDoneProgressManager?
 
+  /// Whether the index was not up-to-date the last time the index progress status changed.
+  private var indexWasOutOfDate = false
+
   init(sourceKitLSPServer: SourceKitLSPServer) {
     self.sourceKitLSPServer = sourceKitLSPServer
   }
@@ -124,8 +127,13 @@ actor IndexProgressManager {
       await logModulesReport(sourceKitLSPServer)
       await workDoneProgress?.end()
       workDoneProgress = nil
+      if indexWasOutOfDate {
+        indexWasOutOfDate = false
+        await sourceKitLSPServer.indexDidBecomeUpToDate()
+      }
       return
     }
+    indexWasOutOfDate = true
 
     if let workDoneProgress {
       await workDoneProgress.update(message: message, percentage: percentage)

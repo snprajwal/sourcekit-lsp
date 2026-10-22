@@ -137,6 +137,9 @@ package actor SourceKitLSPServer {
   /// the method of the request (ie. the value of `TextDocumentRequest.method`).
   private var inProgressTextDocumentRequests: [DocumentURI: [(id: RequestID, requestMethod: String)]] = [:]
 
+  /// The diagnostics most recently published for each open document, by the source that produced them.
+  private var publishedDiagnostics: [DocumentURI: [DiagnosticsSource: [Diagnostic]]] = [:]
+
   var onExit: () -> Void
 
   /// The files that we asked the client to watch.
@@ -388,13 +391,18 @@ package actor SourceKitLSPServer {
     }
   }
 
+  /// - Parameters:
+  ///   - combine: If `nil`, the language services of the document are tried in priority order and the first one that
+  ///     handles the request determines the response. Otherwise, the request is sent to all language services and
+  ///     their responses, in priority order, are combined into a single response using this closure.
   private func handleRequest<RequestType: TextDocumentRequest>(
     for request: RequestAndReply<RequestType>,
     requestHandler:
       @Sendable @escaping (
         RequestType, Workspace, any LanguageService
       ) async throws ->
-      RequestType.Response
+      RequestType.Response,
+    combine: (@Sendable ([RequestType.Response]) -> RequestType.Response)? = nil
   ) async {
     await request.reply {
       let request = request.params
@@ -405,6 +413,29 @@ package actor SourceKitLSPServer {
       let languageServices = workspace.languageServices(forOpenDocument: doc)
       if languageServices.isEmpty {
         throw ResponseError.unknown("No language service for '\(request.textDocument.uri)' found")
+      }
+      if let combine {
+        let responses = try await withThrowingTaskGroup(of: (Int, RequestType.Response?).self) { group in
+          for (index, languageService) in languageServices.enumerated() {
+            group.addTask {
+              do {
+                return (index, try await requestHandler(request, workspace, languageService))
+              } catch let error as ResponseError where error.code == .requestNotImplemented {
+                return (index, nil)
+              } catch is FallThroughToNextLanguageService {
+                return (index, nil)
+              }
+            }
+          }
+          return try await group.reduce(into: []) { $0.append($1) }.sorted { $0.0 < $1.0 }.compactMap(\.1)
+        }
+        guard !responses.isEmpty else {
+          throw ResponseError(
+            code: .requestNotImplemented,
+            message: "No language service implements \(type(of: request).method)"
+          )
+        }
+        return combine(responses)
       }
       // Return the results from the first language service that produces a non-nil response.
       // A language service can opt out of handling this request for the given service by throwing
@@ -436,6 +467,17 @@ package actor SourceKitLSPServer {
     }
   }
 
+  /// Publish the diagnostics that `source` produced for the given document, alongside the latest diagnostics that other
+  /// sources published for it.
+  package func publishDiagnostics(_ diagnostics: [Diagnostic], for uri: DocumentURI, from source: DiagnosticsSource) {
+    guard documentManager.openDocuments.contains(uri) else {
+      return
+    }
+    publishedDiagnostics[uri, default: [:]][source] = diagnostics
+    let merged = DiagnosticsSource.allCases.flatMap { publishedDiagnostics[uri]?[$0] ?? [] }
+    sendNotificationToClient(PublishDiagnosticsNotification(uri: uri, diagnostics: merged))
+  }
+
   /// Send the given notification to the editor.
   package nonisolated func sendNotificationToClient(_ notification: some NotificationType) {
     client.send(notification)
@@ -444,6 +486,13 @@ package actor SourceKitLSPServer {
   /// Send the given request to the editor.
   package func sendRequestToClient<R: RequestType>(_ request: R) async throws -> R.Response {
     return try await client.send(request)
+  }
+
+  /// Notify all language services that background indexing has finished.
+  func indexDidBecomeUpToDate() async {
+    for languageService in workspaces.flatMap(\.allLanguageServices) {
+      await languageService.indexDidBecomeUpToDate()
+    }
   }
 
   /// After the language service has crashed, send `DidOpenTextDocumentNotification`s to a newly instantiated language service for previously open documents.
@@ -681,7 +730,20 @@ extension SourceKitLSPServer: QueueBasedMessageHandler {
     case let request as RequestAndReply<DocumentColorRequest>:
       await self.handleRequest(for: request, requestHandler: self.documentColor)
     case let request as RequestAndReply<DocumentDiagnosticsRequest>:
-      await self.handleRequest(for: request, requestHandler: self.documentDiagnostic)
+      await self.handleRequest(
+        for: request,
+        requestHandler: self.documentDiagnostic,
+        combine: { reports in
+          let items = reports.flatMap { report -> [Diagnostic] in
+            guard case .full(let fullReport) = report else {
+              logger.fault("Cannot combine unchanged diagnostic reports")
+              return []
+            }
+            return fullReport.items
+          }
+          return .full(RelatedFullDocumentDiagnosticReport(items: items))
+        }
+      )
     case let request as RequestAndReply<DocumentFormattingRequest>:
       await self.handleRequest(for: request, requestHandler: self.documentFormatting)
     case let request as RequestAndReply<DocumentRangeFormattingRequest>:
@@ -1318,6 +1380,7 @@ extension SourceKitLSPServer {
     }
 
     let uri = notification.textDocument.uri
+    publishedDiagnostics[uri] = nil
 
     await workspace.buildServerManager.unregisterForChangeNotifications(for: uri)
 
@@ -2706,6 +2769,12 @@ extension SourceKitLSPServer {
 }
 
 package typealias Diagnostic = LanguageServerProtocol.Diagnostic
+
+/// A producer of diagnostics for a document, whose push diagnostics are merged in this order.
+package enum DiagnosticsSource: CaseIterable, Sendable {
+  case swift
+  case documentation
+}
 
 fileprivate extension CheckedIndex {
   /// Take the name of containers into account to form a fully-qualified name for the given symbol.

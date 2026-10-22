@@ -196,6 +196,9 @@ package protocol LanguageService: AnyObject, Sendable {
   /// (e.g. header files, swiftmodule files, other compiler input files).
   func documentDependenciesUpdated(_ uris: Set<DocumentURI>) async
 
+  /// Sent when background indexing has finished and the index is up-to-date again.
+  func indexDidBecomeUpToDate() async
+
   // MARK: - Text Document
 
   func completion(_ req: CompletionRequest) async throws -> CompletionList
@@ -385,6 +388,8 @@ package extension LanguageService {
   func documentUpdatedBuildSettings(_ uri: DocumentURI) async {}
 
   func documentDependenciesUpdated(_ uris: Set<DocumentURI>) async {}
+
+  func indexDidBecomeUpToDate() async {}
 
   func completion(_ req: CompletionRequest) async throws -> CompletionList {
     throw ResponseError.requestNotImplemented(CompletionRequest.self)
