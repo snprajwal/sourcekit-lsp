@@ -64,6 +64,14 @@ package actor DocumentationLanguageService: LanguageService, Sendable {
   ) async throws {
     self.sourceKitLSPServer = sourceKitLSPServer
     self.documentationManager = DocCDocumentationManager(buildServerManager: workspace.buildServerManager)
+    // Diagnostics for Swift files are registered by `SwiftLanguageService`, which combines them with ours.
+    await sourceKitLSPServer.registerCapabilities(
+      for: ServerCapabilities(
+        diagnosticProvider: DiagnosticOptions(interFileDependencies: true, workspaceDiagnostics: false)
+      ),
+      languages: [.markdown, .tutorial],
+      registry: workspace.capabilityRegistry
+    )
   }
 
   package nonisolated func canHandle(toolchain: Toolchain) -> Bool {

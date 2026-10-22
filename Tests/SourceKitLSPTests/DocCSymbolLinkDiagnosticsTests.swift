@@ -114,6 +114,54 @@ final class DocCSymbolLinkDiagnosticsTests: XCTestCase {
     )
   }
 
+  func testUnresolvedSymbolLinkInMarkdownIsPulled() async throws {
+    let project = try await SwiftPMTestProject(
+      files: [
+        "MyLibrary/MyFile.swift": """
+        public struct Foo {}
+        """,
+        "MyLibrary/MyLibrary.docc/Overview.md": """
+        # Overview
+
+        See ``Foo`` and 1️⃣``Missing``2️⃣.
+        """,
+      ],
+      capabilities: ClientCapabilities(
+        textDocument: TextDocumentClientCapabilities(diagnostic: .init(dynamicRegistration: true))
+      ),
+      enableBackgroundIndexing: true,
+      usePullDiagnostics: false
+    )
+    let registeredForMarkdown = self.expectation(description: "Pull diagnostics registered for Markdown")
+    project.testClient.handleMultipleRequests { (request: RegisterCapabilityRequest) in
+      for registration in request.registrations where registration.method == DocumentDiagnosticsRequest.method {
+        let options = DiagnosticRegistrationOptions(fromLSPAny: registration.registerOptions)
+        let languages = options?.textDocumentRegistrationOptions.documentSelector?.compactMap(\.language)
+        if languages == ["markdown", "tutorial"] {
+          registeredForMarkdown.fulfill()
+        }
+      }
+      return VoidResponse()
+    }
+    let (uri, positions) = try project.openDocument("Overview.md")
+    try await fulfillmentOfOrThrow(registeredForMarkdown)
+
+    let report = try await project.testClient.send(
+      DocumentDiagnosticsRequest(textDocument: TextDocumentIdentifier(uri))
+    )
+    XCTAssertEqual(
+      report.fullReport?.items,
+      [
+        Diagnostic(
+          range: positions["1️⃣"]..<positions["2️⃣"],
+          severity: .warning,
+          source: "DocC",
+          message: "No symbol link resolved for 'Missing'"
+        )
+      ]
+    )
+  }
+
   func testUnresolvedSymbolLinkInMarkdownIsPublishedOnceIndexIsUpToDate() async throws {
     let indexingAllowed = MultiEntrySemaphore(name: "Indexing allowed")
     let project = try await SwiftPMTestProject(
